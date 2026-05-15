@@ -136,6 +136,10 @@ Environment variables:
 - `CODEX_RELAY_EXECUTE`: set to `1` to execute without `--execute`.
 - `CODEX_RELAY_KEEP_ALIVE_SECONDS`: preferred SSE keep-alive interval hint.
 
+## Releases
+
+Releases are managed by Release Please from conventional commits on `main`.
+
 ## Security Notes
 
 The SSE endpoint should be authenticated before using `--execute`. Events can cause local commands to run, so do not point this relay at an untrusted stream.
