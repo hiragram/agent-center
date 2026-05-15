@@ -30,10 +30,9 @@ Only `prompt` is required. The relay ignores all other event names.
 
 ## Usage
 
-Until the TypeScript SDK packages are published to npm, clone this repository next to `event-emission-protocol-ts` so the local file dependencies resolve:
+Until the TypeScript SDK packages are published to npm, this repository uses vendored SDK package tarballs in `vendor/`.
 
 ```sh
-git clone https://github.com/hiragram/event-emission-protocol-ts.git
 git clone https://github.com/hiragram/agent-center.git
 cd agent-center
 npm install
@@ -42,6 +41,15 @@ npm start -- --url http://127.0.0.1:8787/events --execute
 ```
 
 Without `--execute`, the relay runs in dry-run mode and logs what it would invoke.
+
+To refresh the vendored SDK tarballs from a sibling SDK checkout:
+
+```sh
+mkdir -p vendor
+npm pack ../event-emission-protocol-ts/packages/core --pack-destination vendor
+npm pack ../event-emission-protocol-ts/packages/client --pack-destination vendor
+npm install
+```
 
 Environment variables:
 

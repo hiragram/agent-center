@@ -10,8 +10,8 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@event-emission-protocol/client": "file:../event-emission-protocol-ts/packages/client",
-    "@event-emission-protocol/core": "file:../event-emission-protocol-ts/packages/core"
+    "@event-emission-protocol/client": "file:vendor/event-emission-protocol-client-0.1.0.tgz",
+    "@event-emission-protocol/core": "file:vendor/event-emission-protocol-core-0.1.0.tgz"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
