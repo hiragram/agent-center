@@ -35,7 +35,7 @@ Until the TypeScript SDK packages are published to npm, this repository uses ven
 Run directly with `npx` from GitHub:
 
 ```sh
-npx github:hiragram/agent-center -- --config agent-center.config.json
+npx github:hiragram/agent-center --config agent-center.config.json
 ```
 
 Or use a local checkout:
