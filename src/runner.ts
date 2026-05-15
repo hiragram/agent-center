@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { CommandConfig } from "./config.js";
 import type { CodexRunRequest } from "./request.js";
 
 export interface CodexRunner {
@@ -10,6 +11,47 @@ export interface CodexRunResult {
   signal: NodeJS.Signals | null;
   stdout: string;
   stderr: string;
+}
+
+export interface CommandRunRequest {
+  bin: string;
+  args: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+}
+
+export interface CommandRunner {
+  run(request: CommandRunRequest): Promise<CodexRunResult>;
+}
+
+export class SpawnCommandRunner implements CommandRunner {
+  run(request: CommandRunRequest): Promise<CodexRunResult> {
+    const child = spawn(request.bin, request.args, {
+      cwd: request.cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, ...request.env },
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+
+    return new Promise((resolve, reject) => {
+      child.on("error", reject);
+      child.on("close", (code, signal) => {
+        resolve({ code, signal, stdout, stderr });
+      });
+    });
+  }
 }
 
 export class CliCodexRunner implements CodexRunner {
@@ -130,4 +172,13 @@ export function buildOpenClawAgentArgs(request: CodexRunRequest): string[] {
 
   args.push("--message", request.prompt);
   return args;
+}
+
+export function buildCommandRequest(command: CommandConfig): CommandRunRequest {
+  return {
+    bin: command.bin,
+    args: command.args ?? [],
+    cwd: command.cwd,
+    env: command.env,
+  };
 }

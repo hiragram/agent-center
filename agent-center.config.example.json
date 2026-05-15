@@ -8,17 +8,34 @@
       "routes": [
         {
           "eventName": "issue.opened",
-          "agent": "triage",
           "promptTemplate": "A GitHub issue was opened.\n\nTitle: {{ data.title }}\nURL: {{ data.url }}\n\nReview the issue and decide the next action.",
-          "cwd": "/Users/rei/.openclaw/workspace/example-project",
-          "thinking": "medium",
-          "sandbox": "workspace-write"
+          "command": {
+            "bin": "openclaw",
+            "args": [
+              "agent",
+              "--agent",
+              "triage",
+              "--message",
+              "{{ prompt }}"
+            ],
+            "cwd": "/Users/rei/.openclaw/workspace/example-project"
+          }
         },
         {
           "eventName": "release.failed",
-          "agent": "ops",
           "promptTemplate": "A release failed for {{ data.repository }}.\n\nFailure details:\n{{ data }}\n\nInvestigate and report the likely cause.",
-          "thinking": "high"
+          "command": {
+            "bin": "openclaw",
+            "args": [
+              "agent",
+              "--agent",
+              "ops",
+              "--thinking",
+              "high",
+              "--message",
+              "{{ prompt }}"
+            ]
+          }
         }
       ]
     },
@@ -28,8 +45,17 @@
       "routes": [
         {
           "eventName": "comment.created",
-          "agent": "docs",
-          "promptTemplate": "A document comment was created.\n\nDocument: {{ data.document_title }}\nComment: {{ data.comment_text }}\n\nDecide whether documentation needs to be updated."
+          "promptTemplate": "A document comment was created.\n\nDocument: {{ data.document_title }}\nComment: {{ data.comment_text }}\n\nDecide whether documentation needs to be updated.",
+          "command": {
+            "bin": "/Applications/Codex.app/Contents/Resources/codex",
+            "args": [
+              "exec",
+              "--sandbox",
+              "workspace-write",
+              "{{ prompt }}"
+            ],
+            "cwd": "/Users/rei/.openclaw/workspace/docs-project"
+          }
         }
       ]
     }

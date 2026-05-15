@@ -27,6 +27,7 @@ export interface RouteConfig {
   eventName: string;
   agent?: string;
   promptTemplate?: string;
+  command?: CommandConfig;
   runner?: "codex" | "openclaw";
   cwd?: string;
   model?: string;
@@ -34,6 +35,13 @@ export interface RouteConfig {
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
   profile?: string;
   json?: boolean;
+}
+
+export interface CommandConfig {
+  bin: string;
+  args?: string[];
+  cwd?: string;
+  env?: Record<string, string>;
 }
 
 export type RuntimeConfig = RelayConfig | AgentCenterConfig;
@@ -184,6 +192,10 @@ function parseRouteConfig(value: unknown, streamIndex: number, routeIndex: numbe
     route.promptTemplate = requireString(value.promptTemplate, `${prefix}.promptTemplate`);
   }
 
+  if (value.command !== undefined) {
+    route.command = parseCommandConfig(value.command, `${prefix}.command`);
+  }
+
   if (value.runner !== undefined) {
     if (value.runner !== "codex" && value.runner !== "openclaw") {
       throw new Error(`${prefix}.runner must be "codex" or "openclaw"`);
@@ -199,6 +211,38 @@ function parseRouteConfig(value: unknown, streamIndex: number, routeIndex: numbe
   if (value.sandbox !== undefined) route.sandbox = requireSandbox(value.sandbox, `${prefix}.sandbox`);
 
   return route;
+}
+
+function parseCommandConfig(value: unknown, prefix: string): CommandConfig {
+  if (!isRecord(value)) {
+    throw new Error(`${prefix} must be an object`);
+  }
+
+  const command: CommandConfig = {
+    bin: requireString(value.bin, `${prefix}.bin`),
+  };
+
+  if (value.args !== undefined) {
+    if (!Array.isArray(value.args)) {
+      throw new Error(`${prefix}.args must be an array`);
+    }
+    command.args = value.args.map((arg, index) => requireString(arg, `${prefix}.args[${index}]`));
+  }
+
+  if (value.cwd !== undefined) {
+    command.cwd = requireString(value.cwd, `${prefix}.cwd`);
+  }
+
+  if (value.env !== undefined) {
+    if (!isRecord(value.env)) {
+      throw new Error(`${prefix}.env must be an object`);
+    }
+    command.env = Object.fromEntries(
+      Object.entries(value.env).map(([key, envValue]) => [key, requireString(envValue, `${prefix}.env.${key}`)]),
+    );
+  }
+
+  return command;
 }
 
 function requireValue(argv: string[], index: number): string {

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { loadConfigFile, parseArgs } from "../dist/config.js";
-import { handleConfiguredMessage, handleMessage, renderPrompt } from "../dist/relay.js";
+import { handleConfiguredMessage, handleMessage, renderCommand, renderPrompt } from "../dist/relay.js";
 import { parseCodexRunRequest } from "../dist/request.js";
 import { buildCodexArgs, buildOpenClawAgentArgs } from "../dist/runner.js";
 
@@ -73,6 +73,14 @@ test("loadConfigFile reads streams and agent routes", () => {
             eventName: "issue.opened",
             agent: "triage",
             promptTemplate: "Triage issue: {{ data.title }}",
+            command: {
+              bin: "openclaw",
+              args: ["agent", "--agent", "triage", "--message", "{{ prompt }}"],
+              cwd: "/tmp/repo",
+              env: {
+                AGENT_CENTER_STREAM: "{{ stream.id }}",
+              },
+            },
             model: "gpt-5.2",
             thinking: "medium",
             cwd: "/tmp/repo",
@@ -101,6 +109,14 @@ test("loadConfigFile reads streams and agent routes", () => {
             eventName: "issue.opened",
             agent: "triage",
             promptTemplate: "Triage issue: {{ data.title }}",
+            command: {
+              bin: "openclaw",
+              args: ["agent", "--agent", "triage", "--message", "{{ prompt }}"],
+              cwd: "/tmp/repo",
+              env: {
+                AGENT_CENTER_STREAM: "{{ stream.id }}",
+              },
+            },
             model: "gpt-5.2",
             thinking: "medium",
             cwd: "/tmp/repo",
@@ -108,6 +124,31 @@ test("loadConfigFile reads streams and agent routes", () => {
         ],
       },
     ],
+  });
+});
+
+test("renderCommand interpolates command templates", () => {
+  const rendered = renderCommand({
+    bin: "openclaw",
+    args: ["agent", "--agent", "{{ route.agent }}", "--message", "{{ prompt }}"],
+    cwd: "{{ data.cwd }}",
+    env: {
+      EVENT_NAME: "{{ event.event_name }}",
+    },
+  }, {
+    route: { agent: "triage" },
+    event: { event_name: "issue.opened" },
+    data: { cwd: "/tmp/project" },
+    prompt: "Triage issue",
+  });
+
+  assert.deepEqual(rendered, {
+    bin: "openclaw",
+    args: ["agent", "--agent", "triage", "--message", "Triage issue"],
+    cwd: "/tmp/project",
+    env: {
+      EVENT_NAME: "issue.opened",
+    },
   });
 });
 
@@ -292,6 +333,55 @@ test("handleConfiguredMessage routes service events to configured agents", async
   assert.equal(log.entries.at(-1).text, "routed request completed");
 });
 
+test("handleConfiguredMessage runs configured command templates", async () => {
+  const log = logger();
+  const commandCalls = [];
+  const runner = {
+    async run() {
+      throw new Error("agent runners should not be called");
+    },
+  };
+  const commandRunner = {
+    async run(command) {
+      commandCalls.push(command);
+      return { code: 0, signal: null, stdout: "done", stderr: "" };
+    },
+  };
+
+  await handleConfiguredMessage(message("issue.opened", { title: "Crash", repo: "/tmp/project" }), {
+    execute: true,
+    stream: {
+      id: "github",
+      url: "https://example.test/events",
+      routes: [
+        {
+          eventName: "issue.opened",
+          promptTemplate: "Triage issue: {{ data.title }}",
+          command: {
+            bin: "openclaw",
+            args: ["agent", "--agent", "triage", "--message", "{{ prompt }}"],
+            cwd: "{{ data.repo }}",
+          },
+        },
+      ],
+    },
+    codexRunner: runner,
+    openclawRunner: runner,
+    commandRunner,
+    logger: log,
+  });
+
+  assert.deepEqual(commandCalls, [
+    {
+      bin: "openclaw",
+      args: ["agent", "--agent", "triage", "--message", "Triage issue: Crash"],
+      cwd: "/tmp/project",
+      env: undefined,
+    },
+  ]);
+  assert.equal(log.entries.at(-1).text, "command request completed");
+});
+
 test("handleConfiguredMessage ignores unrouted events", async () => {
   const log = logger();
   const runner = {
@@ -309,6 +399,7 @@ test("handleConfiguredMessage ignores unrouted events", async () => {
     },
     codexRunner: runner,
     openclawRunner: runner,
+    commandRunner: runner,
     logger: log,
   });
 

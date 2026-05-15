@@ -1,7 +1,15 @@
 import { connectEventStream } from "@event-emission-protocol/client";
 import type { EventEmissionMessage } from "@event-emission-protocol/core";
-import type { AgentCenterConfig, RelayConfig, RouteConfig, RuntimeConfig, StreamConfig } from "./config.js";
-import { CliCodexRunner, OpenClawAgentRunner, type CodexRunner } from "./runner.js";
+import type { AgentCenterConfig, CommandConfig, RelayConfig, RouteConfig, RuntimeConfig, StreamConfig } from "./config.js";
+import {
+  buildCommandRequest,
+  CliCodexRunner,
+  OpenClawAgentRunner,
+  SpawnCommandRunner,
+  type CodexRunner,
+  type CommandRunRequest,
+  type CommandRunner,
+} from "./runner.js";
 import { createRunRequestFromEvent, parseCodexRunRequest } from "./request.js";
 import type { CodexRunRequest } from "./request.js";
 
@@ -15,6 +23,7 @@ export interface RunRelayOptions {
   config: RuntimeConfig;
   runner?: CodexRunner;
   openclawRunner?: CodexRunner;
+  commandRunner?: CommandRunner;
   logger?: RelayLogger;
 }
 
@@ -24,6 +33,7 @@ export async function runRelay(options: RunRelayOptions): Promise<void> {
     await runConfiguredRelay(options.config, {
       codexRunner: options.runner ?? new CliCodexRunner(options.config.codexBin),
       openclawRunner: options.openclawRunner ?? new OpenClawAgentRunner(options.config.openclawBin),
+      commandRunner: options.commandRunner ?? new SpawnCommandRunner(),
       logger,
     });
     return;
@@ -49,7 +59,12 @@ export async function runRelay(options: RunRelayOptions): Promise<void> {
 
 async function runConfiguredRelay(
   config: AgentCenterConfig,
-  options: { codexRunner: CodexRunner; openclawRunner: CodexRunner; logger: RelayLogger },
+  options: {
+    codexRunner: CodexRunner;
+    openclawRunner: CodexRunner;
+    commandRunner: CommandRunner;
+    logger: RelayLogger;
+  },
 ): Promise<void> {
   await Promise.all(config.streams.map((stream) => runStream(stream, config, options)));
 }
@@ -57,7 +72,12 @@ async function runConfiguredRelay(
 async function runStream(
   stream: StreamConfig,
   config: AgentCenterConfig,
-  options: { codexRunner: CodexRunner; openclawRunner: CodexRunner; logger: RelayLogger },
+  options: {
+    codexRunner: CodexRunner;
+    openclawRunner: CodexRunner;
+    commandRunner: CommandRunner;
+    logger: RelayLogger;
+  },
 ): Promise<void> {
   options.logger.info("connecting to event stream", {
     streamId: stream.id,
@@ -73,6 +93,7 @@ async function runStream(
       stream,
       codexRunner: options.codexRunner,
       openclawRunner: options.openclawRunner,
+      commandRunner: options.commandRunner,
       logger: options.logger,
     });
   }
@@ -89,6 +110,7 @@ export interface HandleConfiguredMessageOptions {
   stream: StreamConfig;
   codexRunner: CodexRunner;
   openclawRunner: CodexRunner;
+  commandRunner: CommandRunner;
   logger: RelayLogger;
 }
 
@@ -111,6 +133,14 @@ export async function handleConfiguredMessage(
     createRunRequestFromEvent(renderPrompt(message, route, options.stream)),
     route,
   );
+  const templateContext = createTemplateContext(message, route, options.stream, request.prompt);
+
+  if (route.command !== undefined) {
+    const command = renderCommand(route.command, templateContext);
+    await runCommandRoute(command, message, route, options);
+    return;
+  }
+
   const runnerKind = route.runner ?? (route.agent === undefined ? "codex" : "openclaw");
   const runner = runnerKind === "openclaw" ? options.openclawRunner : options.codexRunner;
 
@@ -151,6 +181,51 @@ export async function handleConfiguredMessage(
   options.logger.error("routed request failed", {
     streamId: options.stream.id,
     messageId: message.message_id,
+    code: result.code,
+    signal: result.signal,
+    stderr: result.stderr,
+  });
+}
+
+async function runCommandRoute(
+  command: CommandRunRequest,
+  message: EventEmissionMessage,
+  route: RouteConfig,
+  options: HandleConfiguredMessageOptions,
+): Promise<void> {
+  if (!options.execute) {
+    options.logger.info("dry-run command request", {
+      streamId: options.stream.id,
+      messageId: message.message_id,
+      eventName: message.event.event_name,
+      command,
+    });
+    return;
+  }
+
+  options.logger.info("running command request", {
+    streamId: options.stream.id,
+    messageId: message.message_id,
+    eventName: message.event.event_name,
+    bin: command.bin,
+    args: command.args,
+    cwd: command.cwd,
+  });
+
+  const result = await options.commandRunner.run(command);
+  if (result.code === 0) {
+    options.logger.info("command request completed", {
+      streamId: options.stream.id,
+      messageId: message.message_id,
+      stdout: result.stdout,
+    });
+    return;
+  }
+
+  options.logger.error("command request failed", {
+    streamId: options.stream.id,
+    messageId: message.message_id,
+    route: route.eventName,
     code: result.code,
     signal: result.signal,
     stderr: result.stderr,
@@ -215,12 +290,7 @@ function applyRoute(request: CodexRunRequest, route: RouteConfig): CodexRunReque
 
 export function renderPrompt(message: EventEmissionMessage, route: RouteConfig, stream: StreamConfig): string {
   if (route.promptTemplate !== undefined) {
-    return interpolateTemplate(route.promptTemplate, {
-      stream,
-      message,
-      event: message.event,
-      data: message.event.data,
-    });
+    return renderTemplate(route.promptTemplate, createTemplateContext(message, route, stream));
   }
 
   return [
@@ -233,7 +303,18 @@ export function renderPrompt(message: EventEmissionMessage, route: RouteConfig, 
   ].join("\n");
 }
 
-function interpolateTemplate(template: string, context: Record<string, unknown>): string {
+export function renderCommand(command: CommandConfig, context: Record<string, unknown>): CommandRunRequest {
+  return buildCommandRequest({
+    bin: renderTemplate(command.bin, context),
+    args: command.args?.map((arg) => renderTemplate(arg, context)),
+    cwd: command.cwd === undefined ? undefined : renderTemplate(command.cwd, context),
+    env: command.env === undefined ? undefined : Object.fromEntries(
+      Object.entries(command.env).map(([key, value]) => [key, renderTemplate(value, context)]),
+    ),
+  });
+}
+
+export function renderTemplate(template: string, context: Record<string, unknown>): string {
   return template.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_match, path: string) => {
     const value = lookupPath(context, path);
     if (value === undefined || value === null) {
@@ -244,6 +325,22 @@ function interpolateTemplate(template: string, context: Record<string, unknown>)
     }
     return JSON.stringify(value);
   });
+}
+
+function createTemplateContext(
+  message: EventEmissionMessage,
+  route: RouteConfig,
+  stream: StreamConfig,
+  prompt?: string,
+): Record<string, unknown> {
+  return {
+    stream,
+    route,
+    message,
+    event: message.event,
+    data: message.event.data,
+    prompt,
+  };
 }
 
 function lookupPath(value: unknown, path: string): unknown {
