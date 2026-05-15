@@ -45,6 +45,39 @@ export class CliCodexRunner implements CodexRunner {
   }
 }
 
+export class OpenClawAgentRunner implements CodexRunner {
+  constructor(private readonly openclawBin: string) {}
+
+  run(request: CodexRunRequest): Promise<CodexRunResult> {
+    const args = buildOpenClawAgentArgs(request);
+    const child = spawn(this.openclawBin, args, {
+      cwd: request.cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: process.env,
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+
+    return new Promise((resolve, reject) => {
+      child.on("error", reject);
+      child.on("close", (code, signal) => {
+        resolve({ code, signal, stdout, stderr });
+      });
+    });
+  }
+}
+
 export function buildCodexArgs(request: CodexRunRequest): string[] {
   const args = ["exec"];
 
@@ -73,5 +106,28 @@ export function buildCodexArgs(request: CodexRunRequest): string[] {
   }
 
   args.push(request.prompt);
+  return args;
+}
+
+export function buildOpenClawAgentArgs(request: CodexRunRequest): string[] {
+  const args = ["agent"];
+
+  if (request.agent !== undefined) {
+    args.push("--agent", request.agent);
+  }
+
+  if (request.model !== undefined) {
+    args.push("--model", request.model);
+  }
+
+  if (request.thinking !== undefined) {
+    args.push("--thinking", request.thinking);
+  }
+
+  if (request.json === true) {
+    args.push("--json");
+  }
+
+  args.push("--message", request.prompt);
   return args;
 }

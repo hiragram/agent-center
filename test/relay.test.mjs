@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
-import { parseArgs } from "../dist/config.js";
-import { handleMessage } from "../dist/relay.js";
+import { loadConfigFile, parseArgs } from "../dist/config.js";
+import { handleConfiguredMessage, handleMessage } from "../dist/relay.js";
 import { parseCodexRunRequest } from "../dist/request.js";
-import { buildCodexArgs } from "../dist/runner.js";
+import { buildCodexArgs, buildOpenClawAgentArgs } from "../dist/runner.js";
 
 function message(eventName, data = {}) {
   return {
@@ -47,10 +50,62 @@ test("parseArgs reads URL and execution controls", () => {
   ], {});
 
   assert.deepEqual(config, {
+    mode: "single",
     url: "https://example.test/events",
     execute: true,
     codexBin: "/tmp/codex",
     keepAliveIntervalHintSeconds: 20,
+  });
+});
+
+test("loadConfigFile reads streams and agent routes", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agent-center-"));
+  const path = join(dir, "agent-center.config.json");
+  writeFileSync(path, JSON.stringify({
+    execute: true,
+    streams: [
+      {
+        id: "github",
+        url: "https://example.test/github/events",
+        keepAliveIntervalHintSeconds: 20,
+        routes: [
+          {
+            eventName: "issue.opened",
+            agent: "triage",
+            model: "gpt-5.2",
+            thinking: "medium",
+            cwd: "/tmp/repo",
+          },
+        ],
+      },
+    ],
+  }));
+
+  assert.deepEqual(loadConfigFile(path, {
+    execute: false,
+    codexBin: "/tmp/codex",
+    openclawBin: "/tmp/openclaw",
+  }), {
+    mode: "configured",
+    execute: true,
+    codexBin: "/tmp/codex",
+    openclawBin: "/tmp/openclaw",
+    streams: [
+      {
+        id: "github",
+        url: "https://example.test/github/events",
+        keepAliveIntervalHintSeconds: 20,
+        routes: [
+          {
+            eventName: "issue.opened",
+            agent: "triage",
+            model: "gpt-5.2",
+            thinking: "medium",
+            cwd: "/tmp/repo",
+          },
+        ],
+      },
+    ],
   });
 });
 
@@ -116,6 +171,27 @@ test("buildCodexArgs maps request fields to codex exec flags", () => {
   ]);
 });
 
+test("buildOpenClawAgentArgs maps agent routes to openclaw agent flags", () => {
+  assert.deepEqual(buildOpenClawAgentArgs({
+    prompt: "Handle issue",
+    agent: "triage",
+    model: "gpt-5.2",
+    thinking: "high",
+    json: true,
+  }), [
+    "agent",
+    "--agent",
+    "triage",
+    "--model",
+    "gpt-5.2",
+    "--thinking",
+    "high",
+    "--json",
+    "--message",
+    "Handle issue",
+  ]);
+});
+
 test("handleMessage logs dry-runs without invoking the runner", async () => {
   const log = logger();
   const runner = {
@@ -152,4 +228,73 @@ test("handleMessage invokes the runner in execute mode", async () => {
 
   assert.deepEqual(calls, [{ prompt: "Hello" }]);
   assert.equal(log.entries.at(-1).text, "codex request completed");
+});
+
+test("handleConfiguredMessage routes service events to configured agents", async () => {
+  const log = logger();
+  const openclawCalls = [];
+  const codexRunner = {
+    async run() {
+      throw new Error("codex runner should not be called");
+    },
+  };
+  const openclawRunner = {
+    async run(request) {
+      openclawCalls.push(request);
+      return { code: 0, signal: null, stdout: "done", stderr: "" };
+    },
+  };
+
+  await handleConfiguredMessage(message("issue.opened", { prompt: "Triage this" }), {
+    execute: true,
+    stream: {
+      id: "github",
+      url: "https://example.test/events",
+      routes: [
+        {
+          eventName: "issue.opened",
+          agent: "triage",
+          cwd: "/tmp/project",
+          thinking: "medium",
+        },
+      ],
+    },
+    codexRunner,
+    openclawRunner,
+    logger: log,
+  });
+
+  assert.deepEqual(openclawCalls, [
+    {
+      prompt: "Triage this",
+      agent: "triage",
+      cwd: "/tmp/project",
+      thinking: "medium",
+    },
+  ]);
+  assert.equal(log.entries.at(-1).text, "routed request completed");
+});
+
+test("handleConfiguredMessage ignores unrouted events", async () => {
+  const log = logger();
+  const runner = {
+    async run() {
+      throw new Error("runner should not be called");
+    },
+  };
+
+  await handleConfiguredMessage(message("comment.created", { prompt: "Ignore me" }), {
+    execute: true,
+    stream: {
+      id: "github",
+      url: "https://example.test/events",
+      routes: [{ eventName: "issue.opened", agent: "triage" }],
+    },
+    codexRunner: runner,
+    openclawRunner: runner,
+    logger: log,
+  });
+
+  assert.equal(log.entries.length, 1);
+  assert.equal(log.entries[0].details.reason, "no matching route");
 });

@@ -42,6 +42,55 @@ npm start -- --url http://127.0.0.1:8787/events --execute
 
 Without `--execute`, the relay runs in dry-run mode and logs what it would invoke.
 
+### Route Events to Agents
+
+Use a config file when different services or events should go to different agents:
+
+```sh
+cp agent-center.config.example.json agent-center.config.json
+npm start -- --config agent-center.config.json
+```
+
+Example:
+
+```json
+{
+  "execute": false,
+  "streams": [
+    {
+      "id": "github",
+      "url": "https://example.com/github/events",
+      "routes": [
+        {
+          "eventName": "issue.opened",
+          "agent": "triage",
+          "cwd": "/Users/rei/.openclaw/workspace/example-project",
+          "thinking": "medium"
+        }
+      ]
+    },
+    {
+      "id": "docs",
+      "url": "https://example.com/docs/events",
+      "routes": [
+        {
+          "eventName": "comment.created",
+          "agent": "docs"
+        }
+      ]
+    }
+  ]
+}
+```
+
+With `agent`, the relay invokes:
+
+```sh
+openclaw agent --agent <agent> --message <prompt>
+```
+
+The prompt still comes from `event.data.prompt`. Route-level `cwd`, `model`, `thinking`, `sandbox`, `profile`, and `json` are applied as local defaults and overrides. Events with no matching route are ignored.
+
 To refresh the vendored SDK tarballs from a sibling SDK checkout:
 
 ```sh

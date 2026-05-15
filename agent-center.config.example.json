@@ -1,0 +1,34 @@
+{
+  "execute": false,
+  "streams": [
+    {
+      "id": "github",
+      "url": "https://example.com/github/events",
+      "keepAliveIntervalHintSeconds": 20,
+      "routes": [
+        {
+          "eventName": "issue.opened",
+          "agent": "triage",
+          "cwd": "/Users/rei/.openclaw/workspace/example-project",
+          "thinking": "medium",
+          "sandbox": "workspace-write"
+        },
+        {
+          "eventName": "release.failed",
+          "agent": "ops",
+          "thinking": "high"
+        }
+      ]
+    },
+    {
+      "id": "docs",
+      "url": "https://example.com/docs/events",
+      "routes": [
+        {
+          "eventName": "comment.created",
+          "agent": "docs"
+        }
+      ]
+    }
+  ]
+}

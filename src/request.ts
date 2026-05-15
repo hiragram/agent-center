@@ -4,6 +4,7 @@ export const CODEX_RUN_REQUESTED = "codex.run.requested";
 
 export interface CodexRunRequest {
   prompt: string;
+  agent?: string;
   cwd?: string;
   model?: string;
   thinking?: "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -18,8 +19,11 @@ export interface RequestParseResult {
   reason?: string;
 }
 
-export function parseCodexRunRequest(message: EventEmissionMessage): RequestParseResult {
-  if (message.event.event_name !== CODEX_RUN_REQUESTED) {
+export function parseCodexRunRequest(
+  message: EventEmissionMessage,
+  expectedEventName = CODEX_RUN_REQUESTED,
+): RequestParseResult {
+  if (message.event.event_name !== expectedEventName) {
     return { ok: false, reason: "ignored event name" };
   }
 
@@ -41,6 +45,13 @@ export function parseCodexRunRequest(message: EventEmissionMessage): RequestPars
       return { ok: false, reason: "event data cwd must be a non-empty string" };
     }
     request.cwd = data.cwd;
+  }
+
+  if (data.agent !== undefined) {
+    if (typeof data.agent !== "string" || data.agent.trim() === "") {
+      return { ok: false, reason: "event data agent must be a non-empty string" };
+    }
+    request.agent = data.agent;
   }
 
   if (data.model !== undefined) {
