@@ -32,6 +32,14 @@ Configured mode treats service events as facts about what happened. Events do no
 
 Until the TypeScript SDK packages are published to npm, this repository uses vendored SDK package tarballs in `vendor/`.
 
+Run directly with `npx` from GitHub:
+
+```sh
+npx github:hiragram/agent-center -- --config agent-center.config.json
+```
+
+Or use a local checkout:
+
 ```sh
 git clone https://github.com/hiragram/agent-center.git
 cd agent-center

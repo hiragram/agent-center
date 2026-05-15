@@ -4,8 +4,12 @@
   "private": true,
   "description": "Relay Event Emission Protocol events to local agent runs.",
   "type": "module",
+  "bin": {
+    "agent-center": "./dist/index.js"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
     "test": "npm run build && node --test test/*.test.mjs",
     "start": "node dist/index.js"
   },
