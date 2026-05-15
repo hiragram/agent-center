@@ -51,6 +51,8 @@ cp agent-center.config.example.json agent-center.config.json
 npm start -- --config agent-center.config.json
 ```
 
+Full configuration reference: [`docs/configuration.md`](docs/configuration.md).
+
 Example:
 
 ```json
