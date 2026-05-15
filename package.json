@@ -1,0 +1,20 @@
+{
+  "name": "agent-center",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Relay Event Emission Protocol events to local agent runs.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@event-emission-protocol/client": "file:../event-emission-protocol-ts/packages/client",
+    "@event-emission-protocol/core": "file:../event-emission-protocol-ts/packages/core"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
+  }
+}
