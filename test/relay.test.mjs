@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { loadConfigFile, parseArgs } from "../dist/config.js";
-import { handleConfiguredMessage, handleMessage } from "../dist/relay.js";
+import { handleConfiguredMessage, handleMessage, renderPrompt } from "../dist/relay.js";
 import { parseCodexRunRequest } from "../dist/request.js";
 import { buildCodexArgs, buildOpenClawAgentArgs } from "../dist/runner.js";
 
@@ -72,6 +72,7 @@ test("loadConfigFile reads streams and agent routes", () => {
           {
             eventName: "issue.opened",
             agent: "triage",
+            promptTemplate: "Triage issue: {{ data.title }}",
             model: "gpt-5.2",
             thinking: "medium",
             cwd: "/tmp/repo",
@@ -99,6 +100,7 @@ test("loadConfigFile reads streams and agent routes", () => {
           {
             eventName: "issue.opened",
             agent: "triage",
+            promptTemplate: "Triage issue: {{ data.title }}",
             model: "gpt-5.2",
             thinking: "medium",
             cwd: "/tmp/repo",
@@ -107,6 +109,20 @@ test("loadConfigFile reads streams and agent routes", () => {
       },
     ],
   });
+});
+
+test("renderPrompt interpolates service event data from route templates", () => {
+  assert.equal(renderPrompt(message("issue.opened", {
+    title: "Crash on launch",
+    labels: ["bug", "urgent"],
+  }), {
+    eventName: "issue.opened",
+    promptTemplate: "Handle {{ event.event_name }}: {{ data.title }} labels={{ data.labels }}",
+  }, {
+    id: "github",
+    url: "https://example.test/events",
+    routes: [],
+  }), "Handle issue.opened: Crash on launch labels=[\"bug\",\"urgent\"]");
 });
 
 test("parseCodexRunRequest accepts codex.run.requested events", () => {
@@ -245,7 +261,7 @@ test("handleConfiguredMessage routes service events to configured agents", async
     },
   };
 
-  await handleConfiguredMessage(message("issue.opened", { prompt: "Triage this" }), {
+  await handleConfiguredMessage(message("issue.opened", { title: "Triage this" }), {
     execute: true,
     stream: {
       id: "github",
@@ -254,6 +270,7 @@ test("handleConfiguredMessage routes service events to configured agents", async
         {
           eventName: "issue.opened",
           agent: "triage",
+          promptTemplate: "Triage issue: {{ data.title }}",
           cwd: "/tmp/project",
           thinking: "medium",
         },
@@ -266,7 +283,7 @@ test("handleConfiguredMessage routes service events to configured agents", async
 
   assert.deepEqual(openclawCalls, [
     {
-      prompt: "Triage this",
+      prompt: "Triage issue: Triage this",
       agent: "triage",
       cwd: "/tmp/project",
       thinking: "medium",
@@ -283,7 +300,7 @@ test("handleConfiguredMessage ignores unrouted events", async () => {
     },
   };
 
-  await handleConfiguredMessage(message("comment.created", { prompt: "Ignore me" }), {
+  await handleConfiguredMessage(message("comment.created", { text: "Ignore me" }), {
     execute: true,
     stream: {
       id: "github",

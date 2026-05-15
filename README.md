@@ -64,6 +64,7 @@ Example:
         {
           "eventName": "issue.opened",
           "agent": "triage",
+          "promptTemplate": "A GitHub issue was opened.\n\nTitle: {{ data.title }}\nURL: {{ data.url }}\n\nReview the issue and decide the next action.",
           "cwd": "/Users/rei/.openclaw/workspace/example-project",
           "thinking": "medium"
         }
@@ -75,7 +76,8 @@ Example:
       "routes": [
         {
           "eventName": "comment.created",
-          "agent": "docs"
+          "agent": "docs",
+          "promptTemplate": "A document comment was created.\n\nDocument: {{ data.document_title }}\nComment: {{ data.comment_text }}\n\nDecide whether documentation needs to be updated."
         }
       ]
     }
@@ -89,7 +91,9 @@ With `agent`, the relay invokes:
 openclaw agent --agent <agent> --message <prompt>
 ```
 
-The prompt still comes from `event.data.prompt`. Route-level `cwd`, `model`, `thinking`, `sandbox`, `profile`, and `json` are applied as local defaults and overrides. Events with no matching route are ignored.
+The service event remains a fact about what happened. It does not need to contain an agent instruction or `prompt`.
+
+Agent Center creates the agent prompt locally from `promptTemplate`. Templates can reference the received event with paths such as `{{ event.event_name }}`, `{{ data.title }}`, or `{{ message.message_id }}`. Without `promptTemplate`, Agent Center sends a generic prompt containing the full event JSON. Route-level `cwd`, `model`, `thinking`, `sandbox`, `profile`, and `json` are applied as local execution settings. Events with no matching route are ignored.
 
 To refresh the vendored SDK tarballs from a sibling SDK checkout:
 

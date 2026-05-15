@@ -26,6 +26,7 @@ export interface StreamConfig {
 export interface RouteConfig {
   eventName: string;
   agent?: string;
+  promptTemplate?: string;
   runner?: "codex" | "openclaw";
   cwd?: string;
   model?: string;
@@ -177,6 +178,10 @@ function parseRouteConfig(value: unknown, streamIndex: number, routeIndex: numbe
 
   if (value.agent !== undefined) {
     route.agent = requireString(value.agent, `${prefix}.agent`);
+  }
+
+  if (value.promptTemplate !== undefined) {
+    route.promptTemplate = requireString(value.promptTemplate, `${prefix}.promptTemplate`);
   }
 
   if (value.runner !== undefined) {

@@ -2,7 +2,7 @@ import { connectEventStream } from "@event-emission-protocol/client";
 import type { EventEmissionMessage } from "@event-emission-protocol/core";
 import type { AgentCenterConfig, RelayConfig, RouteConfig, RuntimeConfig, StreamConfig } from "./config.js";
 import { CliCodexRunner, OpenClawAgentRunner, type CodexRunner } from "./runner.js";
-import { parseCodexRunRequest } from "./request.js";
+import { createRunRequestFromEvent, parseCodexRunRequest } from "./request.js";
 import type { CodexRunRequest } from "./request.js";
 
 export interface RelayLogger {
@@ -107,18 +107,10 @@ export async function handleConfiguredMessage(
     return;
   }
 
-  const parsed = parseCodexRunRequest(message, route.eventName);
-  if (!parsed.ok || parsed.request === undefined) {
-    options.logger.info("ignored event", {
-      streamId: options.stream.id,
-      messageId: message.message_id,
-      eventName: message.event.event_name,
-      reason: parsed.reason,
-    });
-    return;
-  }
-
-  const request = applyRoute(parsed.request, route);
+  const request = applyRoute(
+    createRunRequestFromEvent(renderPrompt(message, route, options.stream)),
+    route,
+  );
   const runnerKind = route.runner ?? (route.agent === undefined ? "codex" : "openclaw");
   const runner = runnerKind === "openclaw" ? options.openclawRunner : options.codexRunner;
 
@@ -219,6 +211,48 @@ function applyRoute(request: CodexRunRequest, route: RouteConfig): CodexRunReque
   assignIfDefined(routed, "profile", route.profile ?? request.profile);
   assignIfDefined(routed, "json", route.json ?? request.json);
   return routed;
+}
+
+export function renderPrompt(message: EventEmissionMessage, route: RouteConfig, stream: StreamConfig): string {
+  if (route.promptTemplate !== undefined) {
+    return interpolateTemplate(route.promptTemplate, {
+      stream,
+      message,
+      event: message.event,
+      data: message.event.data,
+    });
+  }
+
+  return [
+    `An event was emitted by service stream "${stream.id}".`,
+    "",
+    "Decide what, if anything, should be done in response.",
+    "",
+    "Event:",
+    JSON.stringify(message, null, 2),
+  ].join("\n");
+}
+
+function interpolateTemplate(template: string, context: Record<string, unknown>): string {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_match, path: string) => {
+    const value = lookupPath(context, path);
+    if (value === undefined || value === null) {
+      return "";
+    }
+    if (typeof value === "string") {
+      return value;
+    }
+    return JSON.stringify(value);
+  });
+}
+
+function lookupPath(value: unknown, path: string): unknown {
+  return path.split(".").reduce<unknown>((current, part) => {
+    if (typeof current !== "object" || current === null || Array.isArray(current)) {
+      return undefined;
+    }
+    return (current as Record<string, unknown>)[part];
+  }, value);
 }
 
 function assignIfDefined<Key extends keyof CodexRunRequest>(

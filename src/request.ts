@@ -92,6 +92,10 @@ export function parseCodexRunRequest(
   return { ok: true, request };
 }
 
+export function createRunRequestFromEvent(prompt: string): CodexRunRequest {
+  return { prompt };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

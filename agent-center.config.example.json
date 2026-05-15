@@ -9,6 +9,7 @@
         {
           "eventName": "issue.opened",
           "agent": "triage",
+          "promptTemplate": "A GitHub issue was opened.\n\nTitle: {{ data.title }}\nURL: {{ data.url }}\n\nReview the issue and decide the next action.",
           "cwd": "/Users/rei/.openclaw/workspace/example-project",
           "thinking": "medium",
           "sandbox": "workspace-write"
@@ -16,6 +17,7 @@
         {
           "eventName": "release.failed",
           "agent": "ops",
+          "promptTemplate": "A release failed for {{ data.repository }}.\n\nFailure details:\n{{ data }}\n\nInvestigate and report the likely cause.",
           "thinking": "high"
         }
       ]
@@ -26,7 +28,8 @@
       "routes": [
         {
           "eventName": "comment.created",
-          "agent": "docs"
+          "agent": "docs",
+          "promptTemplate": "A document comment was created.\n\nDocument: {{ data.document_title }}\nComment: {{ data.comment_text }}\n\nDecide whether documentation needs to be updated."
         }
       ]
     }
