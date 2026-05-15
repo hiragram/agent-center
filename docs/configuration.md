@@ -77,6 +77,9 @@ Events with no matching route are ignored.
 
 Agent Center executes commands with `spawn(bin, args)`. It does not run commands through a shell.
 
+If a command exits with a non-zero status, Agent Center logs the failure and keeps the SSE subscription alive.
+If an SSE stream disconnects or fails, Agent Center logs the stream error and reconnects.
+
 ## Templates
 
 Templates use `{{ path.to.value }}` placeholders. Missing values render as an empty string. Non-string values render as JSON.

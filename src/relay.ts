@@ -27,6 +27,8 @@ export interface RunRelayOptions {
   logger?: RelayLogger;
 }
 
+const reconnectDelayMs = 1000;
+
 export async function runRelay(options: RunRelayOptions): Promise<void> {
   const logger = options.logger ?? console;
   if (options.config.mode === "configured") {
@@ -41,19 +43,31 @@ export async function runRelay(options: RunRelayOptions): Promise<void> {
 
   const runner = options.runner ?? new CliCodexRunner(options.config.codexBin);
 
-  logger.info("connecting to event stream", {
-    url: options.config.url,
-    execute: options.config.execute,
-  });
-
-  for await (const message of connectEventStream(options.config.url, {
-    keepAliveIntervalHintSeconds: options.config.keepAliveIntervalHintSeconds,
-  })) {
-    await handleMessage(message, {
+  for (;;) {
+    logger.info("connecting to event stream", {
+      url: options.config.url,
       execute: options.config.execute,
-      runner,
-      logger,
     });
+
+    try {
+      for await (const message of connectEventStream(options.config.url, {
+        keepAliveIntervalHintSeconds: options.config.keepAliveIntervalHintSeconds,
+      })) {
+        await handleMessage(message, {
+          execute: options.config.execute,
+          runner,
+          logger,
+        });
+      }
+      logger.warn("event stream ended; reconnecting", { url: options.config.url });
+    } catch (error) {
+      logger.error("event stream failed; reconnecting", {
+        url: options.config.url,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    await sleep(reconnectDelayMs);
   }
 }
 
@@ -79,25 +93,44 @@ async function runStream(
     logger: RelayLogger;
   },
 ): Promise<void> {
-  options.logger.info("connecting to event stream", {
-    streamId: stream.id,
-    url: stream.url,
-    execute: config.execute,
-  });
-
-  for await (const message of connectEventStream(stream.url, {
-    headers: stream.headers,
-    keepAliveIntervalHintSeconds: stream.keepAliveIntervalHintSeconds,
-  })) {
-    await handleConfiguredMessage(message, {
+  for (;;) {
+    options.logger.info("connecting to event stream", {
+      streamId: stream.id,
+      url: stream.url,
       execute: config.execute,
-      stream,
-      codexRunner: options.codexRunner,
-      openclawRunner: options.openclawRunner,
-      commandRunner: options.commandRunner,
-      logger: options.logger,
     });
+
+    try {
+      for await (const message of connectEventStream(stream.url, {
+        headers: stream.headers,
+        keepAliveIntervalHintSeconds: stream.keepAliveIntervalHintSeconds,
+      })) {
+        await handleConfiguredMessage(message, {
+          execute: config.execute,
+          stream,
+          codexRunner: options.codexRunner,
+          openclawRunner: options.openclawRunner,
+          commandRunner: options.commandRunner,
+          logger: options.logger,
+        });
+      }
+      options.logger.warn("event stream ended; reconnecting", { streamId: stream.id, url: stream.url });
+    } catch (error) {
+      options.logger.error("event stream failed; reconnecting", {
+        streamId: stream.id,
+        url: stream.url,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    await sleep(reconnectDelayMs);
   }
+}
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 }
 
 export interface HandleMessageOptions {
