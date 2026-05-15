@@ -32,6 +32,9 @@ Each `streams[]` entry has:
 - `url`:
   Required string. Event Emission Protocol SSE endpoint.
 
+- `headers`:
+  Optional object of string values. These HTTP request headers are sent when Agent Center subscribes to the SSE endpoint. Use this for bearer tokens or other service-local authentication.
+
 - `keepAliveIntervalHintSeconds`:
   Optional positive integer. Sends the `Event-Emission-Prefer-Keep-Alive-Interval` request header to the service.
 
@@ -106,6 +109,9 @@ Examples:
     {
       "id": "github",
       "url": "https://example.com/github/events",
+      "headers": {
+        "Authorization": "Bearer replace-with-token"
+      },
       "routes": [
         {
           "eventName": "issue.opened",

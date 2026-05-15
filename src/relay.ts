@@ -86,6 +86,7 @@ async function runStream(
   });
 
   for await (const message of connectEventStream(stream.url, {
+    headers: stream.headers,
     keepAliveIntervalHintSeconds: stream.keepAliveIntervalHintSeconds,
   })) {
     await handleConfiguredMessage(message, {

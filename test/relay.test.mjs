@@ -67,6 +67,9 @@ test("loadConfigFile reads streams and agent routes", () => {
       {
         id: "github",
         url: "https://example.test/github/events",
+        headers: {
+          Authorization: "Bearer test-token",
+        },
         keepAliveIntervalHintSeconds: 20,
         routes: [
           {
@@ -103,6 +106,9 @@ test("loadConfigFile reads streams and agent routes", () => {
       {
         id: "github",
         url: "https://example.test/github/events",
+        headers: {
+          Authorization: "Bearer test-token",
+        },
         keepAliveIntervalHintSeconds: 20,
         routes: [
           {

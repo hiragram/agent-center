@@ -19,6 +19,7 @@ export interface AgentCenterConfig {
 export interface StreamConfig {
   id: string;
   url: string;
+  headers?: Record<string, string>;
   keepAliveIntervalHintSeconds?: number;
   routes: RouteConfig[];
 }
@@ -166,6 +167,7 @@ function parseStreamConfig(value: unknown, index: number): StreamConfig {
   return {
     id: requireString(value.id, `streams[${index}].id`),
     url: requireString(value.url, `streams[${index}].url`),
+    headers: parseOptionalStringRecord(value.headers, `streams[${index}].headers`),
     keepAliveIntervalHintSeconds: parseMaybePositiveInteger(
       value.keepAliveIntervalHintSeconds,
       `streams[${index}].keepAliveIntervalHintSeconds`,
@@ -292,6 +294,20 @@ function requireBoolean(value: unknown, name: string): boolean {
     throw new Error(`${name} must be a boolean`);
   }
   return value;
+}
+
+function parseOptionalStringRecord(value: unknown, name: string): Record<string, string> | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!isRecord(value)) {
+    throw new Error(`${name} must be an object`);
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, recordValue]) => [key, requireString(recordValue, `${name}.${key}`)]),
+  );
 }
 
 function requireThinking(value: unknown, name: string): RouteConfig["thinking"] {
