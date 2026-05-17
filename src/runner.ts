@@ -18,6 +18,8 @@ export interface CommandRunRequest {
   args: string[];
   cwd?: string;
   env?: Record<string, string>;
+  input?: string;
+  timeoutMs?: number;
 }
 
 export interface CommandRunner {
@@ -28,12 +30,21 @@ export class SpawnCommandRunner implements CommandRunner {
   run(request: CommandRunRequest): Promise<CodexRunResult> {
     const child = spawn(request.bin, request.args, {
       cwd: request.cwd,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, ...request.env },
     });
 
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    const timeout = request.timeoutMs === undefined
+      ? undefined
+      : setTimeout(() => {
+          timedOut = true;
+          child.kill("SIGTERM");
+        }, request.timeoutMs);
+
+    child.stdin.end(request.input ?? "");
 
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
@@ -46,9 +57,18 @@ export class SpawnCommandRunner implements CommandRunner {
     });
 
     return new Promise((resolve, reject) => {
-      child.on("error", reject);
+      child.on("error", (error) => {
+        if (timeout !== undefined) clearTimeout(timeout);
+        reject(error);
+      });
       child.on("close", (code, signal) => {
-        resolve({ code, signal, stdout, stderr });
+        if (timeout !== undefined) clearTimeout(timeout);
+        resolve({
+          code,
+          signal,
+          stdout,
+          stderr: timedOut ? `${stderr}${stderr ? "\n" : ""}command timed out after ${request.timeoutMs}ms` : stderr,
+        });
       });
     });
   }
@@ -174,11 +194,15 @@ export function buildOpenClawAgentArgs(request: CodexRunRequest): string[] {
   return args;
 }
 
-export function buildCommandRequest(command: CommandConfig): CommandRunRequest {
-  return {
+export function buildCommandRequest(command: CommandConfig & { timeoutMs?: number }): CommandRunRequest {
+  const request: CommandRunRequest = {
     bin: command.bin,
     args: command.args ?? [],
     cwd: command.cwd,
     env: command.env,
   };
+  if (command.timeoutMs !== undefined) {
+    request.timeoutMs = command.timeoutMs;
+  }
+  return request;
 }

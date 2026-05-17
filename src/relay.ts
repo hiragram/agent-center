@@ -170,6 +170,11 @@ export async function handleConfiguredMessage(
   );
   const templateContext = createTemplateContext(message, route, options.stream, request.prompt);
 
+  if (route.router !== undefined) {
+    await runRouterRoute(renderCommand(route.router, templateContext), message, route, templateContext, options);
+    return;
+  }
+
   if (route.command !== undefined) {
     const command = renderCommand(route.command, templateContext);
     await runCommandRoute(command, message, route, options);
@@ -224,6 +229,78 @@ export async function handleConfiguredMessage(
   });
 }
 
+async function runRouterRoute(
+  router: CommandRunRequest,
+  message: EventEmissionMessage,
+  route: RouteConfig,
+  templateContext: Record<string, unknown>,
+  options: HandleConfiguredMessageOptions,
+): Promise<void> {
+  const input = `${JSON.stringify(templateContext)}\n`;
+  const timeoutMs = router.timeoutMs ?? 5000;
+  options.logger.info("running event router", {
+    streamId: options.stream.id,
+    messageId: message.message_id,
+    eventName: message.event.event_name,
+    bin: router.bin,
+    args: router.args,
+    cwd: router.cwd,
+    timeoutMs,
+  });
+
+  const result = await options.commandRunner.run({
+    ...router,
+    input,
+    timeoutMs,
+  });
+
+  if (result.code !== 0) {
+    options.logger.error("event router failed", {
+      streamId: options.stream.id,
+      messageId: message.message_id,
+      eventName: message.event.event_name,
+      code: result.code,
+      signal: result.signal,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    });
+    return;
+  }
+
+  const parsed = parseRouterOutput(result.stdout);
+  if (!parsed.ok) {
+    options.logger.error("event router failed", {
+      streamId: options.stream.id,
+      messageId: message.message_id,
+      eventName: message.event.event_name,
+      reason: parsed.reason,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    });
+    return;
+  }
+
+  if (parsed.ignore) {
+    options.logger.info("event router ignored event", {
+      streamId: options.stream.id,
+      messageId: message.message_id,
+      eventName: message.event.event_name,
+      reason: parsed.reason,
+      stderr: result.stderr,
+    });
+    return;
+  }
+
+  options.logger.info("event router selected command", {
+    streamId: options.stream.id,
+    messageId: message.message_id,
+    eventName: message.event.event_name,
+    command: parsed.command,
+    stderr: result.stderr,
+  });
+  await runCommandRoute(parsed.command, message, route, options);
+}
+
 async function runCommandRoute(
   command: CommandRunRequest,
   message: EventEmissionMessage,
@@ -269,6 +346,102 @@ async function runCommandRoute(
     signal: result.signal,
     stderr: result.stderr,
   });
+}
+
+type RouterOutput =
+  | { ok: true; ignore: true; reason?: string }
+  | { ok: true; ignore: false; command: CommandRunRequest }
+  | { ok: false; reason: string };
+
+function parseRouterOutput(stdout: string): RouterOutput {
+  const trimmed = stdout.trim();
+  if (trimmed === "") {
+    return { ok: false, reason: "router stdout was empty" };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch (error) {
+    return {
+      ok: false,
+      reason: `router stdout was not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
+  if (!isRecord(parsed)) {
+    return { ok: false, reason: "router output must be an object" };
+  }
+
+  if (typeof parsed.error === "string" && parsed.error.trim() !== "") {
+    return { ok: false, reason: parsed.error };
+  }
+
+  if (parsed.ignore === true) {
+    return {
+      ok: true,
+      ignore: true,
+      reason: typeof parsed.reason === "string" ? parsed.reason : undefined,
+    };
+  }
+
+  if (parsed.command === undefined) {
+    return { ok: false, reason: "router output must include command or ignore=true" };
+  }
+
+  const command = parseRouterCommand(parsed.command);
+  if (!command.ok) {
+    return command;
+  }
+  return {
+    ok: true,
+    ignore: false,
+    command: command.command,
+  };
+}
+
+function parseRouterCommand(value: unknown): { ok: true; command: CommandRunRequest } | { ok: false; reason: string } {
+  if (!isRecord(value)) {
+    return { ok: false, reason: "router command must be an object" };
+  }
+  if (typeof value.bin !== "string" || value.bin.trim() === "") {
+    return { ok: false, reason: "router command.bin must be a non-empty string" };
+  }
+
+  const command: CommandRunRequest = {
+    bin: value.bin,
+    args: [],
+  };
+
+  if (value.args !== undefined) {
+    if (!Array.isArray(value.args) || value.args.some((arg) => typeof arg !== "string")) {
+      return { ok: false, reason: "router command.args must be an array of strings" };
+    }
+    command.args = value.args;
+  }
+
+  if (value.cwd !== undefined) {
+    if (typeof value.cwd !== "string" || value.cwd.trim() === "") {
+      return { ok: false, reason: "router command.cwd must be a non-empty string" };
+    }
+    command.cwd = value.cwd;
+  }
+
+  if (value.env !== undefined) {
+    if (!isRecord(value.env)) {
+      return { ok: false, reason: "router command.env must be an object" };
+    }
+    const env: Record<string, string> = {};
+    for (const [key, envValue] of Object.entries(value.env)) {
+      if (typeof envValue !== "string") {
+        return { ok: false, reason: `router command.env.${key} must be a string` };
+      }
+      env[key] = envValue;
+    }
+    command.env = env;
+  }
+
+  return { ok: true, command };
 }
 
 export async function handleMessage(message: EventEmissionMessage, options: HandleMessageOptions): Promise<void> {
@@ -350,6 +523,7 @@ export function renderCommand(command: CommandConfig, context: Record<string, un
     env: command.env === undefined ? undefined : Object.fromEntries(
       Object.entries(command.env).map(([key, value]) => [key, renderTemplate(value, context)]),
     ),
+    timeoutMs: "timeoutMs" in command && typeof command.timeoutMs === "number" ? command.timeoutMs : undefined,
   });
 }
 
@@ -389,6 +563,10 @@ function lookupPath(value: unknown, path: string): unknown {
     }
     return (current as Record<string, unknown>)[part];
   }, value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function assignIfDefined<Key extends keyof CodexRunRequest>(

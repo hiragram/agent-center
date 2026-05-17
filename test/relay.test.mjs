@@ -109,6 +109,12 @@ test("loadConfigFile reads streams and agent routes", () => {
                 AGENT_CENTER_STREAM: "{{ stream.id }}",
               },
             },
+            router: {
+              bin: "node",
+              args: ["scripts/route-event.js"],
+              cwd: "/tmp/repo",
+              timeoutMs: 1000,
+            },
             model: "gpt-5.2",
             thinking: "medium",
             cwd: "/tmp/repo",
@@ -147,6 +153,12 @@ test("loadConfigFile reads streams and agent routes", () => {
               env: {
                 AGENT_CENTER_STREAM: "{{ stream.id }}",
               },
+            },
+            router: {
+              bin: "node",
+              args: ["scripts/route-event.js"],
+              cwd: "/tmp/repo",
+              timeoutMs: 1000,
             },
             model: "gpt-5.2",
             thinking: "medium",
@@ -492,6 +504,134 @@ test("handleConfiguredMessage runs configured command templates", async () => {
   ]);
   assert.equal(log.entries[0].details.data.title, "Crash");
   assert.equal(log.entries.at(-1).text, "command request completed");
+});
+
+test("handleConfiguredMessage runs event routers and executes returned commands", async () => {
+  const log = logger();
+  const commandCalls = [];
+  const runner = {
+    async run() {
+      throw new Error("agent runners should not be called");
+    },
+  };
+  const commandRunner = {
+    async run(command) {
+      commandCalls.push(command);
+      if (command.bin === "node") {
+        const context = JSON.parse(command.input);
+        assert.equal(context.stream.id, "github");
+        assert.equal(context.event.event_name, "github.push");
+        assert.equal(context.data.repository.full_name, "reirei-lab/devteam");
+        return {
+          code: 0,
+          signal: null,
+          stdout: JSON.stringify({
+            command: {
+              bin: "./scripts/handle-push.sh",
+              args: [context.data.repository.full_name, context.data.ref],
+              cwd: ".",
+              env: {
+                DEVTEAM_EVENT_ID: context.message.message_id,
+              },
+            },
+          }),
+          stderr: "",
+        };
+      }
+      return { code: 0, signal: null, stdout: "done", stderr: "" };
+    },
+  };
+
+  await handleConfiguredMessage(message("github.push", {
+    ref: "refs/heads/main",
+    repository: { full_name: "reirei-lab/devteam" },
+  }), {
+    execute: true,
+    stream: {
+      id: "github",
+      url: "https://example.test/events",
+      routes: [
+        {
+          eventName: "github.push",
+          router: {
+            bin: "node",
+            args: ["scripts/route-github-event.js"],
+            cwd: ".",
+            timeoutMs: 1000,
+          },
+        },
+      ],
+    },
+    codexRunner: runner,
+    openclawRunner: runner,
+    commandRunner,
+    logger: log,
+  });
+
+  assert.equal(commandCalls.length, 2);
+  assert.deepEqual(commandCalls[0], {
+    bin: "node",
+    args: ["scripts/route-github-event.js"],
+    cwd: ".",
+    env: undefined,
+    timeoutMs: 1000,
+    input: commandCalls[0].input,
+  });
+  assert.deepEqual(commandCalls[1], {
+    bin: "./scripts/handle-push.sh",
+    args: ["reirei-lab/devteam", "refs/heads/main"],
+    cwd: ".",
+    env: {
+      DEVTEAM_EVENT_ID: "msg_test",
+    },
+  });
+  assert.equal(log.entries.at(-2).text, "running command request");
+  assert.equal(log.entries.at(-1).text, "command request completed");
+});
+
+test("handleConfiguredMessage lets event routers ignore events", async () => {
+  const log = logger();
+  const runner = {
+    async run() {
+      throw new Error("agent runners should not be called");
+    },
+  };
+  const commandRunner = {
+    async run() {
+      return {
+        code: 0,
+        signal: null,
+        stdout: JSON.stringify({ ignore: true, reason: "bot sender" }),
+        stderr: "",
+      };
+    },
+  };
+
+  await handleConfiguredMessage(message("github.push", {
+    sender: { login: "reirei-agent" },
+  }), {
+    execute: true,
+    stream: {
+      id: "github",
+      url: "https://example.test/events",
+      routes: [
+        {
+          eventName: "github.push",
+          router: {
+            bin: "node",
+            args: ["scripts/route-github-event.js"],
+          },
+        },
+      ],
+    },
+    codexRunner: runner,
+    openclawRunner: runner,
+    commandRunner,
+    logger: log,
+  });
+
+  assert.equal(log.entries.at(-1).text, "event router ignored event");
+  assert.equal(log.entries.at(-1).details.reason, "bot sender");
 });
 
 test("handleConfiguredMessage ignores unrouted events", async () => {

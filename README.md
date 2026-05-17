@@ -116,6 +116,12 @@ Agent Center creates command input locally from `promptTemplate`. Templates can 
 
 `command.bin`, `command.args[]`, `command.cwd`, and `command.env` are also templates. `{{ prompt }}` contains the rendered prompt. Agent Center uses `spawn` with an argument array; it does not run command templates through a shell.
 
+For complex routing, a route can use `router` instead of `command`. A router is
+a local command that receives the event context as JSON on stdin and returns
+either `{"command": ...}` or `{"ignore": true, "reason": "..."}` on stdout.
+Router output commands are executed through the same command runner as static
+`command` routes.
+
 Without `promptTemplate`, Agent Center sends a generic prompt containing the full event JSON. Events with no matching route are ignored.
 
 For compatibility, routes without `command` can still use the built-in `agent`, `runner`, `cwd`, `model`, `thinking`, `sandbox`, `profile`, and `json` fields. New routes should prefer `command` because it makes the exact CLI invocation explicit.

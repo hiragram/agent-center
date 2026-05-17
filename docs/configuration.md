@@ -81,6 +81,11 @@ Each `routes[]` entry has:
 - `command`:
   Preferred execution configuration. Defines the exact local command to run.
 
+- `router`:
+  Optional local command that receives the event context as JSON on stdin and
+  returns a command decision as JSON on stdout. Use this when routing needs
+  service-specific logic that is easier to write in JavaScript than in config.
+
 - `agent`, `runner`, `cwd`, `model`, `thinking`, `sandbox`, `profile`, `json`:
   Legacy built-in runner fields. They are still supported, but new routes should prefer `command` because it makes the local CLI invocation explicit.
 
@@ -106,6 +111,74 @@ Agent Center executes commands with `spawn(bin, args)`. It does not run commands
 
 If a command exits with a non-zero status, Agent Center logs the failure and keeps the SSE subscription alive.
 If an SSE stream disconnects or fails, Agent Center logs the stream error and reconnects.
+
+## Event Router Fields
+
+`router` has the same fields as `command`, plus an optional timeout:
+
+- `bin`:
+  Required string. Router binary or absolute path.
+
+- `args`:
+  Optional string array. Router arguments.
+
+- `cwd`:
+  Optional string. Working directory for the router.
+
+- `env`:
+  Optional object of string values. These values are added to the router process environment.
+
+- `timeoutMs`:
+  Optional positive integer. Defaults to `5000`. Agent Center terminates the router when it exceeds this timeout.
+
+Router stdin is one JSON object:
+
+```json
+{
+  "stream": { "id": "github" },
+  "route": { "eventName": "github.push" },
+  "message": { "protocol_version": "0.1.0" },
+  "event": { "event_name": "github.push", "data": {} },
+  "data": {}
+}
+```
+
+Router stdout must be JSON. To execute a command, return:
+
+```json
+{
+  "command": {
+    "bin": "./scripts/handle-github-event.sh",
+    "args": ["reirei-lab/devteam", "refs/heads/main"],
+    "cwd": ".",
+    "env": {
+      "DEVTEAM_EVENT_ID": "msg_123"
+    }
+  }
+}
+```
+
+To ignore an event, return:
+
+```json
+{
+  "ignore": true,
+  "reason": "bot sender"
+}
+```
+
+To fail routing explicitly, return:
+
+```json
+{
+  "error": "unsupported repository"
+}
+```
+
+Agent Center runs routers even when `execute` is `false`, because routing is
+part of deciding what would happen. The command returned by the router still
+honors `execute`: in dry-run mode Agent Center logs the command instead of
+running it.
 
 ## Templates
 

@@ -29,6 +29,7 @@ export interface RouteConfig {
   agent?: string;
   promptTemplate?: string;
   command?: CommandConfig;
+  router?: RouterConfig;
   runner?: "codex" | "openclaw";
   cwd?: string;
   model?: string;
@@ -43,6 +44,10 @@ export interface CommandConfig {
   args?: string[];
   cwd?: string;
   env?: Record<string, string>;
+}
+
+export interface RouterConfig extends CommandConfig {
+  timeoutMs?: number;
 }
 
 export type RuntimeConfig = RelayConfig | AgentCenterConfig;
@@ -199,6 +204,10 @@ function parseRouteConfig(value: unknown, streamIndex: number, routeIndex: numbe
     route.command = parseCommandConfig(value.command, `${prefix}.command`);
   }
 
+  if (value.router !== undefined) {
+    route.router = parseRouterConfig(value.router, `${prefix}.router`);
+  }
+
   if (value.runner !== undefined) {
     if (value.runner !== "codex" && value.runner !== "openclaw") {
       throw new Error(`${prefix}.runner must be "codex" or "openclaw"`);
@@ -214,6 +223,14 @@ function parseRouteConfig(value: unknown, streamIndex: number, routeIndex: numbe
   if (value.sandbox !== undefined) route.sandbox = requireSandbox(value.sandbox, `${prefix}.sandbox`);
 
   return route;
+}
+
+function parseRouterConfig(value: unknown, prefix: string): RouterConfig {
+  const router: RouterConfig = parseCommandConfig(value, prefix);
+  if (isRecord(value) && value.timeoutMs !== undefined) {
+    router.timeoutMs = parseMaybePositiveInteger(value.timeoutMs, `${prefix}.timeoutMs`);
+  }
+  return router;
 }
 
 function parseCommandConfig(value: unknown, prefix: string): CommandConfig {
