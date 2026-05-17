@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { loadConfigFile, parseArgs } from "../dist/config.js";
+import { createJsonLineLogger } from "../dist/logger.js";
 import { handleConfiguredMessage, handleMessage, renderCommand, renderPrompt } from "../dist/relay.js";
 import { parseCodexRunRequest } from "../dist/request.js";
 import { buildCodexArgs, buildOpenClawAgentArgs } from "../dist/runner.js";
@@ -56,6 +57,30 @@ test("parseArgs reads URL and execution controls", () => {
     codexBin: "/tmp/codex",
     keepAliveIntervalHintSeconds: 20,
   });
+});
+
+test("createJsonLineLogger writes one JSON object per line", () => {
+  let output = "";
+  const logger = createJsonLineLogger({
+    write(chunk) {
+      output += chunk;
+      return true;
+    },
+  });
+
+  logger.info("running command request", {
+    streamId: "github",
+    eventName: "github.push",
+    data: { ref: "refs/heads/main" },
+  });
+
+  const lines = output.trimEnd().split("\n");
+  assert.equal(lines.length, 1);
+  const entry = JSON.parse(lines[0]);
+  assert.equal(entry.level, "info");
+  assert.equal(entry.message, "running command request");
+  assert.equal(entry.streamId, "github");
+  assert.equal(entry.data.ref, "refs/heads/main");
 });
 
 test("loadConfigFile reads streams and agent routes", () => {
