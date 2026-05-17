@@ -84,7 +84,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   }
 
   if (configPath !== undefined && configPath.trim() !== "") {
-    return loadConfigFile(configPath, { execute, codexBin, openclawBin });
+    return loadConfigFile(configPath, { execute, codexBin, openclawBin }, env);
   }
 
   if (url === undefined || url.trim() === "") {
@@ -107,8 +107,9 @@ export function loadConfigFile(
     codexBin: process.env.CODEX_BIN ?? "/Applications/Codex.app/Contents/Resources/codex",
     openclawBin: process.env.OPENCLAW_BIN ?? "openclaw",
   },
+  env: NodeJS.ProcessEnv = process.env,
 ): AgentCenterConfig {
-  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+  const parsed: unknown = expandEnvironmentVariables(JSON.parse(readFileSync(path, "utf8")), env);
   if (!isRecord(parsed)) {
     throw new Error("config file must contain a JSON object");
   }
@@ -308,6 +309,40 @@ function parseOptionalStringRecord(value: unknown, name: string): Record<string,
   return Object.fromEntries(
     Object.entries(value).map(([key, recordValue]) => [key, requireString(recordValue, `${name}.${key}`)]),
   );
+}
+
+function expandEnvironmentVariables(value: unknown, env: NodeJS.ProcessEnv, path = "$"): unknown {
+  if (typeof value === "string") {
+    return expandString(value, env, path);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item, index) => expandEnvironmentVariables(item, env, `${path}[${index}]`));
+  }
+
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, recordValue]) => [
+        key,
+        expandEnvironmentVariables(recordValue, env, `${path}.${key}`),
+      ]),
+    );
+  }
+
+  return value;
+}
+
+function expandString(value: string, env: NodeJS.ProcessEnv, path: string): string {
+  return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}/g, (_match, name: string, _fallback, fallback: string | undefined) => {
+    const envValue = env[name];
+    if (envValue !== undefined && envValue !== "") {
+      return envValue;
+    }
+    if (fallback !== undefined) {
+      return fallback;
+    }
+    throw new Error(`${path} references missing environment variable ${name}`);
+  });
 }
 
 function requireThinking(value: unknown, name: string): RouteConfig["thinking"] {

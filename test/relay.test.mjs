@@ -133,6 +133,86 @@ test("loadConfigFile reads streams and agent routes", () => {
   });
 });
 
+test("loadConfigFile expands environment variables in config strings", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agent-center-"));
+  const path = join(dir, "agent-center.config.json");
+  writeFileSync(path, JSON.stringify({
+    streams: [
+      {
+        id: "github",
+        url: "${EEP_STREAM_URL}",
+        headers: {
+          Authorization: "Bearer ${SSE_BEARER_TOKEN}",
+          "X-Agent-Center": "${AGENT_CENTER_NAME:-devteam}",
+        },
+        routes: [
+          {
+            eventName: "github.ping.received",
+            command: {
+              bin: "${TRUE_BIN:-/usr/bin/true}",
+              args: ["--repo", "${REPO_NAME}"],
+              env: {
+                TOKEN_FILE: "${TOKEN_FILE}",
+              },
+            },
+          },
+        ],
+      },
+    ],
+  }));
+
+  const config = loadConfigFile(path, {
+    execute: false,
+    codexBin: "/tmp/codex",
+    openclawBin: "/tmp/openclaw",
+  }, {
+    EEP_STREAM_URL: "https://eep-bridge.reirei.app/events/github",
+    SSE_BEARER_TOKEN: "secret-token",
+    REPO_NAME: "reirei-lab/example",
+    TOKEN_FILE: "/tmp/token",
+  });
+
+  assert.equal(config.streams[0].url, "https://eep-bridge.reirei.app/events/github");
+  assert.deepEqual(config.streams[0].headers, {
+    Authorization: "Bearer secret-token",
+    "X-Agent-Center": "devteam",
+  });
+  assert.deepEqual(config.streams[0].routes[0].command, {
+    bin: "/usr/bin/true",
+    args: ["--repo", "reirei-lab/example"],
+    env: {
+      TOKEN_FILE: "/tmp/token",
+    },
+  });
+});
+
+test("loadConfigFile rejects missing environment variables", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agent-center-"));
+  const path = join(dir, "agent-center.config.json");
+  writeFileSync(path, JSON.stringify({
+    streams: [
+      {
+        id: "github",
+        url: "${MISSING_URL}",
+        routes: [
+          {
+            eventName: "github.ping.received",
+          },
+        ],
+      },
+    ],
+  }));
+
+  assert.throws(
+    () => loadConfigFile(path, {
+      execute: false,
+      codexBin: "/tmp/codex",
+      openclawBin: "/tmp/openclaw",
+    }, {}),
+    /\$\.streams\[0\]\.url references missing environment variable MISSING_URL/,
+  );
+});
+
 test("renderCommand interpolates command templates", () => {
   const rendered = renderCommand({
     bin: "openclaw",

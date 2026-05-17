@@ -8,6 +8,33 @@ npm start -- --config agent-center.config.json
 
 The config file is JSON. It defines which Event Emission Protocol streams to subscribe to, which service events to route, how to build the local prompt, and which local command to run.
 
+## Environment Variables
+
+String values in the config can reference environment variables:
+
+```json
+{
+  "streams": [
+    {
+      "id": "github",
+      "url": "${EEP_STREAM_URL}",
+      "headers": {
+        "Authorization": "Bearer ${SSE_BEARER_TOKEN}"
+      }
+    }
+  ]
+}
+```
+
+Supported forms:
+
+- `${NAME}`: expands to `process.env.NAME`; startup fails if `NAME` is unset or empty.
+- `${NAME:-fallback}`: uses `fallback` when `NAME` is unset or empty.
+
+Expansion happens before config validation. It applies to every JSON string,
+including stream URLs, headers, route templates, command arguments, `cwd`, and
+command environment values.
+
 ## Top-Level Fields
 
 - `execute`:
