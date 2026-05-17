@@ -465,6 +465,7 @@ test("handleConfiguredMessage runs configured command templates", async () => {
       env: undefined,
     },
   ]);
+  assert.equal(log.entries[0].details.data.title, "Crash");
   assert.equal(log.entries.at(-1).text, "command request completed");
 });
 
@@ -491,4 +492,5 @@ test("handleConfiguredMessage ignores unrouted events", async () => {
 
   assert.equal(log.entries.length, 1);
   assert.equal(log.entries[0].details.reason, "no matching route");
+  assert.equal(log.entries[0].details.data.text, "Ignore me");
 });

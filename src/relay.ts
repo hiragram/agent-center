@@ -159,6 +159,7 @@ export async function handleConfiguredMessage(
       messageId: message.message_id,
       eventName: message.event.event_name,
       reason: "no matching route",
+      data: message.event.data,
     });
     return;
   }
@@ -188,6 +189,7 @@ export async function handleConfiguredMessage(
       cwd: request.cwd,
       model: request.model,
       prompt: request.prompt,
+      data: message.event.data,
     });
     return;
   }
@@ -200,6 +202,7 @@ export async function handleConfiguredMessage(
     agent: request.agent,
     cwd: request.cwd,
     model: request.model,
+    data: message.event.data,
   });
 
   const result = await runner.run(request);
@@ -233,6 +236,7 @@ async function runCommandRoute(
       messageId: message.message_id,
       eventName: message.event.event_name,
       command,
+      data: message.event.data,
     });
     return;
   }
@@ -244,6 +248,7 @@ async function runCommandRoute(
     bin: command.bin,
     args: command.args,
     cwd: command.cwd,
+    data: message.event.data,
   });
 
   const result = await options.commandRunner.run(command);
