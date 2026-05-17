@@ -152,7 +152,7 @@ export async function handleConfiguredMessage(
   message: EventEmissionMessage,
   options: HandleConfiguredMessageOptions,
 ): Promise<void> {
-  const route = options.stream.routes.find((candidate) => candidate.eventName === message.event.event_name);
+  const route = options.stream.routes.find((candidate) => routeMatchesEventName(candidate, message.event.event_name));
   if (route === undefined) {
     options.logger.info("ignored event", {
       streamId: options.stream.id,
@@ -227,6 +227,16 @@ export async function handleConfiguredMessage(
     signal: result.signal,
     stderr: result.stderr,
   });
+}
+
+function routeMatchesEventName(route: RouteConfig, eventName: string): boolean {
+  if (route.eventName === eventName || route.eventName === "*") {
+    return true;
+  }
+  if (route.eventName.endsWith("*")) {
+    return eventName.startsWith(route.eventName.slice(0, -1));
+  }
+  return false;
 }
 
 async function runRouterRoute(

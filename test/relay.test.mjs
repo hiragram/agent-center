@@ -634,6 +634,52 @@ test("handleConfiguredMessage lets event routers ignore events", async () => {
   assert.equal(log.entries.at(-1).details.reason, "bot sender");
 });
 
+test("handleConfiguredMessage supports prefix wildcard route event names", async () => {
+  const log = logger();
+  const commandCalls = [];
+  const runner = {
+    async run() {
+      throw new Error("agent runners should not be called");
+    },
+  };
+  const commandRunner = {
+    async run(command) {
+      commandCalls.push(command);
+      return { code: 0, signal: null, stdout: "done", stderr: "" };
+    },
+  };
+
+  await handleConfiguredMessage(message("github.push", { ref: "refs/heads/main" }), {
+    execute: true,
+    stream: {
+      id: "github",
+      url: "https://example.test/events",
+      routes: [
+        {
+          eventName: "github.*",
+          command: {
+            bin: "/usr/bin/true",
+          },
+        },
+      ],
+    },
+    codexRunner: runner,
+    openclawRunner: runner,
+    commandRunner,
+    logger: log,
+  });
+
+  assert.deepEqual(commandCalls, [
+    {
+      bin: "/usr/bin/true",
+      args: [],
+      cwd: undefined,
+      env: undefined,
+    },
+  ]);
+  assert.equal(log.entries.at(-1).text, "command request completed");
+});
+
 test("handleConfiguredMessage ignores unrouted events", async () => {
   const log = logger();
   const runner = {

@@ -74,6 +74,8 @@ Each `routes[]` entry has:
 
 - `eventName`:
   Required string. Matches `message.event.event_name` from the received Event Emission Protocol message.
+  Exact names match one event, `github.*` style suffix wildcards match by prefix,
+  and `*` matches every event on the stream.
 
 - `promptTemplate`:
   Optional string. Builds the prompt or command input from the received event. If omitted, Agent Center generates a generic prompt containing the full event JSON.
